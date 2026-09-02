@@ -7,6 +7,8 @@ permissions:
   contents: write
 jobs:
   star-history:
+    # Forks do not inherit STAR_HISTORY_TOKEN; run this workflow only upstream.
+    if: ${{ github.repository == 'sub-store-org/Sub-Store' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
