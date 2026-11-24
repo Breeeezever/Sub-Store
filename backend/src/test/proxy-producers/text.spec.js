@@ -1020,6 +1020,45 @@ describe('Proxy text producers', function () {
         ).to.deep.equal([reality]);
     });
 
+    it('maps REALITY ML-KEM independently for Loon XHTTP uploads and downloads', function () {
+        const flag = 'support-x25519mlkem768';
+        const input = `Split=vless,upload.example.com,443,"${UUID}",transport=xhttp,over-tls=true,xhttp-download-server=down.example.com,xhttp-download-over-tls=true`;
+        for (const [upload, download, uploadFlag, downloadFlag] of [
+            [undefined, 'chrome147', undefined, true],
+            ['chrome', 'safari-ios-26', undefined, true],
+            ['chrome147', 'chrome', true, undefined],
+        ]) {
+            const line = [
+                input,
+                upload && `public-key=up-key,tls-profile=${upload}`,
+                `xhttp-download-tls-profile=${download}`,
+            ]
+                .filter(Boolean)
+                .join(',');
+            const [tlsOnly] = ProxyUtils.parse(line);
+            expect(
+                tlsOnly['xhttp-opts']['download-settings'],
+            ).not.to.have.property('reality-opts');
+
+            const [proxy] = ProxyUtils.parse(
+                `${line},xhttp-download-public-key=down-key`,
+            );
+            const [mihomo] = produceInternal('Mihomo', proxy);
+            const downloadReality =
+                mihomo['xhttp-opts']['download-settings']['reality-opts'];
+            expect(mihomo['reality-opts']?.[flag]).to.equal(uploadFlag);
+            expect(downloadReality[flag]).to.equal(downloadFlag);
+
+            downloadReality[flag] = false;
+            const [reparsed] = ProxyUtils.parse(JSON.stringify(mihomo));
+            expect(
+                reparsed['xhttp-opts']['download-settings']['reality-opts'][
+                    flag
+                ],
+            ).to.equal(false);
+        }
+    });
+
     it('validates Loon XHTTP XMUX quotas per endpoint', function () {
         const input = `Split=vless,upload.example.com,443,"${UUID}",transport=xhttp,over-tls=true,alpn=h2,xhttp-mode=stream-up`;
         const split = `${input},xhttp-download-server=download.example.com,xhttp-download-port=8443,xhttp-download-over-tls=true,xhttp-download-alpn=h2`;
@@ -1355,7 +1394,9 @@ describe('Proxy text producers', function () {
             const output = produceExternal('Loon', ProxyUtils.parse(uri));
             expect(output).to.include(`,encryption-mode=${mode}`);
             expect(output).to.include(`,encryption-rtt=${expectedRtt}`);
-            expect(output).to.include(`,encryption-public-keys="${keys}"`);
+            expect(output.split(',')).to.include(
+                `encryption-public-keys=${keys}`,
+            );
             expect(output).to.include(`,encryption-padding=${padding}`);
             expect(ProxyUtils.parse(output)[0]).to.include({
                 network,
@@ -1363,6 +1404,27 @@ describe('Proxy text producers', function () {
                 flow,
             });
         }
+    });
+
+    it('exports unquoted Loon VLESS Encryption public keys with independent XHTTP download', function () {
+        const key = 'A'.repeat(43);
+        const extra = encodeURIComponent(
+            JSON.stringify({
+                downloadSettings: {
+                    address: 'download.example.com',
+                    port: 8443,
+                    security: 'tls',
+                },
+            }),
+        );
+        const proxies = ProxyUtils.parse(
+            `vless://${UUID}@upload.example.com:443?type=xhttp&mode=stream-up&security=tls&encryption=mlkem768x25519plus.native.0rtt.${key}&extra=${extra}#Split`,
+        );
+        const output = produceExternal('Loon', proxies);
+        expect(output).to.include(
+            ',xhttp-download-server=download.example.com,xhttp-download-port=8443,',
+        );
+        expect(output.split(',')).to.include(`encryption-public-keys=${key}`);
     });
 
     it('validates Loon VLESS Encryption padding probabilities and ranges', function () {
@@ -1588,7 +1650,7 @@ describe('Proxy text producers', function () {
         });
 
         expect(output).to.equal(
-            `Loon Reality=vless,vless.example.com,443,"${UUID}",transport=ws,path=/ws,host=cdn.example.com,over-tls=true,skip-cert-verify=true,encryption-mode=native,encryption-rtt=1rtt,encryption-public-keys="${publicKey}",flow=xtls-rprx-vision,sni=sni.example.com,public-key="pubkey",short-id=08`,
+            `Loon Reality=vless,vless.example.com,443,"${UUID}",transport=ws,path=/ws,host=cdn.example.com,over-tls=true,skip-cert-verify=true,encryption-mode=native,encryption-rtt=1rtt,encryption-public-keys=${publicKey},flow=xtls-rprx-vision,sni=sni.example.com,public-key="pubkey",short-id=08`,
         );
     });
 
